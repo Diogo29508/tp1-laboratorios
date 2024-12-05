@@ -1,0 +1,30 @@
+Output: Gerber Files
+Type  : Gerber
+From  : Variant [[No Variations]] of Project [TP1 - Codificador Morse - Grupo 9.PrjPcb]
+   Generated File[MAIN.GTO]
+   Generated File[MAIN.GTP]
+   Generated File[MAIN.GTS]
+   Generated File[MAIN.GTL]
+   Generated File[MAIN.GBL]
+   Generated File[MAIN.GBS]
+   Generated File[MAIN.GBP]
+   Generated File[MAIN.GBO]
+   Generated File[MAIN.GM1]
+   Generated File[MAIN.GM13]
+   Generated File[MAIN.GM15]
+   Generated File[MAIN.GKO]
+   Generated File[MAIN.GPT]
+   Generated File[MAIN.GPB]
+   Generated File[MAIN.1]
+   Generated File[MAIN.GML]
+   Generated File[MAIN.GD1]
+   Generated File[MAIN.GG1]
+   Generated File[MAIN.GM]
+   Generated File[MAIN.EXTREP]
+   Generated File[MAIN.REP]
+
+
+Files Generated   : 21
+Documents Printed : 0
+
+Finished Output Generation At 22:15:41 On 05/12/2024
