@@ -1,26 +1,25 @@
-#include <avr/io.h>
-#include <avr/interrupt.h>
-
-#define F_CPU 16000000UL
-#define BAUD 9600
-#define LED_PIN PB5
-
-unsigned int ubrr = F_CPU / 16 / BAUD - 1;
-
-int main(void) {
-  DDRB |= (1 << LED_PIN);  // Configura PB5 como saída
-  UBRR0H = ubrr >> 8;      // Configura a taxa de baud
-  UBRR0L = ubrr;
-  UCSR0B = (1 << RXEN0) | (1 << RXCIE0) | (1 << TXEN0);  // Habilita RX, TX e interrupção
-  UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);                // 8 bits de dados
-  sei();  // Habilita interrupções globais
-
-  while(1);  // Espera por interrupções
-
-  return 0;
+/*
+Sets up a variable pwm on PB1 - Digital 9
+through OC1A pin 🙂
+first on 1000 Hz
+*/
+void PWM_init()
+{
+    DDRB |= (1 << PB1); // Sets portB 1 as output
+                        // Configure Timer1 for Fast PWM mode with ICR1 as TOP
+    TCCR1A = (1 << COM1A1) | (1 << WGM11);              // Non-inverting mode on OC1A/OC1B
+    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11); // Prescaler = 8, Fast PWM with ICR1
+    ICR1 = 2000;
+    OCR1A = 1000;
 }
 
-ISR(USART_RX_vect) {
-  if (UDR0 == 'D') PORTB &= ~(1 << LED_PIN);  // Desliga LED
-  if (UDR0 == 'L') PORTB |= (1 << LED_PIN);   // Liga LED
+void offPWM()
+{
+    TCCR1A &= ~(1 << COM1A1);
+    // Set output pins low
+    PORTB &= ~(1 << PB1); // Ensure PB1 and PB2 are low
+}
+void onPWM()
+{
+    TCCR1A |= (1 << COM1A1);
 }
