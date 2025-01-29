@@ -1,107 +1,144 @@
-#include <Arduino.h>
+#include <avr/io.h>
+#include <util/delay.h>
+#include <stdio.h>
 
-// Pinos
-#define BUTTON_PIN 8 // Pino digital para o botão
-#define PWM_PIN 9    // Pino PWM (PB1) para o buzzer
-#define LED_PIN 10   // Pino digital para o LED
+#define F_CPU 16000000UL
 
-// Variáveis de controle do pitch
-int pitch = 2000; // Frequência inicial (TOP do Timer1)
+#define BUTTON_UP PD2       // Botão para aumentar a frequência
+#define BUTTON_DOWN PD3     // Botão para diminuir a frequência
+#define LED_PIN PB2         // Pino do LED
 
-// Inicialização do PWM no pino PB1 (Digital 9)
-void PWM_init() {
-  DDRB |= (1 << PB1); // Configura PB1 (D9) como saída
+#define DOT_TIME 100        // Tempo para um ponto no código Morse (ms)
+#define DASH_TIME 300       // Tempo para um traço (ms)
+#define LETTER_SPACE_TIME 700   // Espaço entre letras no Morse (ms)
+#define WORD_SPACE_TIME 1400    // Espaço entre palavras no Morse (ms)
 
-  // Configura Timer1 no modo Fast PWM com ICR1 como TOP
-  TCCR1A = (1 << COM1A1) | (1 << WGM11);              // Modo não inversor no OC1A
-  TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11); // Prescaler = 8, Fast PWM com ICR1
-  ICR1 = pitch;  // Define o TOP inicial
-  OCR1A = pitch / 2; // Define o duty cycle (50%)
+void USART_init() {
+    unsigned int ubrr = F_CPU / 16 / 9600 - 1;
+    UBRR0H = (unsigned char)(ubrr >> 8);
+    UBRR0L = (unsigned char)ubrr;
+    UCSR0B = (1 << RXEN0) | (1 << TXEN0); // Habilita recepção e transmissão
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); // 8 bits de dados
 }
 
-// Função para atualizar o pitch
-void updatePitch() {
-  if (pitch < 100) pitch = 100;   // Limite inferior do pitch
-  if (pitch > 4000) pitch = 4000; // Limite superior do pitch
-  ICR1 = pitch;                   // Atualiza a frequência
-  OCR1A = pitch / 2;              // Mantém o duty cycle em 50%
+void USART_send(char data) {
+    while (!(UCSR0A & (1 << UDRE0)));
+    UDR0 = data;
 }
 
-// Função para desligar o PWM
-void offPWM() {
-  TCCR1A &= ~(1 << COM1A1); // Desativa o PWM no OC1A
-  PORTB &= ~(1 << PB1);     // Garante que PB1 está em LOW
-  digitalWrite(LED_PIN, LOW); // Desliga o LED
+char USART_receive_nonblocking() {
+    if (UCSR0A & (1 << RXC0)) {
+        return UDR0;
+    }
+    return 0; // Retorna 0 se não há dados disponíveis
 }
 
-// Função para ligar o PWM
+void setupPWM() {
+    DDRB |= (1 << PB1); // Configura PB1 como saída para o buzzer
+    DDRB |= (1 << LED_PIN); // Configura PB2 como saída para o LED
+    TCCR1A = (1 << COM1A1) | (1 << WGM11);
+    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11);
+}
+
+void setFrequency(uint16_t frequency) {
+    uint16_t topValue = (16000000 / (8 * frequency)) - 1;
+    ICR1 = topValue;
+    OCR1A = topValue / 2;
+}
+
 void onPWM() {
-  TCCR1A |= (1 << COM1A1); // Ativa o PWM no OC1A
-  digitalWrite(LED_PIN, HIGH); // Liga o LED
+    TCCR1A |= (1 << COM1A1); // Liga o buzzer (PWM)
+    PORTB |= (1 << LED_PIN); // Liga o LED
 }
 
-// Mapeamento dos caracteres para código Morse
-const char *morseCode[] = {
-  ".-", "-...", "-.-.", "-..", ".", "..-.", "--.", "....", "..", ".---", // a-j
-  "-.-", ".-..", "--", "-.", "---", ".--.", "--.-", ".-.", "...", "-",  // k-t
-  "..-", "...-", ".--", "-..-", "-.--", "--.."                          // u-z
-};
-
-// Função para tocar um sinal curto (.)
-void dot() {
-  onPWM();
-  delay(200); // 200 ms para um ponto
-  offPWM();
-  delay(200); // Espaço entre sinais
+void offPWM() {
+    TCCR1A &= ~(1 << COM1A1); // Desliga o buzzer (PWM)
+    PORTB &= ~(1 << PB1);     // Garante que o buzzer está em nível baixo
+    PORTB &= ~(1 << LED_PIN); // Desliga o LED
 }
 
-// Função para tocar um sinal longo (-)
-void dash() {
-  onPWM();
-  delay(600); // 600 ms para um traço
-  offPWM();
-  delay(200); // Espaço entre sinais
+void setupButtons() {
+    DDRD &= ~(1 << BUTTON_UP);
+    PORTD |= (1 << BUTTON_UP);
+    DDRD &= ~(1 << BUTTON_DOWN);
+    PORTD |= (1 << BUTTON_DOWN);
 }
 
-// Função para reproduzir um código Morse
-void playMorse(const char *code) {
-  while (*code) {
-    if (*code == '.') {
-      dot();
-    } else if (*code == '-') {
-      dash();
+const char* morseCode(char c) {
+    switch (c) {
+        case 'A': return ".-"; case 'B': return "-..."; case 'C': return "-.-.";
+        case 'D': return "-.."; case 'E': return "."; case 'F': return "..-.";
+        case 'G': return "--."; case 'H': return "...."; case 'I': return "..";
+        case 'J': return ".---"; case 'K': return "-.-"; case 'L': return ".-..";
+        case 'M': return "--"; case 'N': return "-."; case 'O': return "---";
+        case 'P': return ".--."; case 'Q': return "--.-"; case 'R': return ".-.";
+        case 'S': return "..."; case 'T': return "-"; case 'U': return "..-";
+        case 'V': return "...-"; case 'W': return ".--"; case 'X': return "-..-";
+        case 'Y': return "-.--"; case 'Z': return "--..";
+        case '1': return ".----"; case '2': return "..---"; case '3': return "...--";
+        case '4': return "....-"; case '5': return "....."; case '6': return "-....";
+        case '7': return "--..."; case '8': return "---.."; case '9': return "----.";
+        case '0': return "-----"; case ' ': return " ";
+        default: return "";
     }
-    code++;
-  }
-  delay(600); // Pausa entre caracteres
 }
 
-// Configuração inicial
-void setup() {
-  Serial.begin(9600); // Inicializa a comunicação serial
-  pinMode(BUTTON_PIN, INPUT_PULLUP); // Configura o botão como entrada com pull-up
-  pinMode(LED_PIN, OUTPUT); // Configura o LED como saída
-  PWM_init(); // Inicializa o PWM
-}
-
-// Loop principal
-void loop() {
-  if (Serial.available() > 0) { // Verifica se há dados recebidos
-    char received = Serial.read(); // Lê o caractere recebido
-
-    if (received >= 'a' && received <= 'z') { // Verifica se é uma letra minúscula
-      const char *code = morseCode[received - 'a']; // Obtém o código Morse da letra
-      playMorse(code); // Reproduz o código Morse
-    } else if (received == 'L') { // Comando para ligar o buzzer continuamente
-      onPWM(); // Liga o buzzer continuamente
-    } else if (received == 'D') { // Comando para desligar o buzzer
-      offPWM(); // Desliga o buzzer
-    } else if (received == '+') { // Comando para aumentar o pitch
-      pitch -= 100; // Reduz o valor de ICR1 para aumentar a frequência
-      updatePitch();
-    } else if (received == '-') { // Comando para diminuir o pitch
-      pitch += 100; // Aumenta o valor de ICR1 para diminuir a frequência
-      updatePitch();
+void transmitMorse(const char* message) {
+    while (*message) {
+        const char* morse = morseCode(*message);
+        while (*morse) {
+            if (*morse == '.') {
+                onPWM();
+                _delay_ms(DOT_TIME);
+            } else if (*morse == '-') {
+                onPWM();
+                _delay_ms(DASH_TIME);
+            }
+            offPWM();
+            _delay_ms(DOT_TIME);
+            morse++;
+        }
+        _delay_ms(LETTER_SPACE_TIME);
+        message++;
     }
-  }
+    _delay_ms(WORD_SPACE_TIME);
+}
+
+int main() {
+    USART_init();
+    setupPWM();
+    setupButtons();
+
+    uint16_t frequency = 1000;
+    setFrequency(frequency);
+
+    char receivedCommand = 0;
+
+    while (1) {
+        if (!(PIND & (1 << BUTTON_UP))) {
+            frequency += 100;
+            if (frequency > 2000) frequency = 2000;
+            setFrequency(frequency);
+            _delay_ms(200);
+        }
+
+        if (!(PIND & (1 << BUTTON_DOWN))) {
+            frequency -= 100;
+            if (frequency < 500) frequency = 500;
+            setFrequency(frequency);
+            _delay_ms(200);
+        }
+
+        receivedCommand = USART_receive_nonblocking();
+        if (receivedCommand) {
+            if (receivedCommand == 'l') {
+                onPWM();
+            } else if (receivedCommand == 'd') {
+                offPWM();
+            } else {
+                char buffer[2] = {receivedCommand, '\0'};
+                transmitMorse(buffer);
+            }
+        }
+    }
 }
